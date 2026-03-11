@@ -1,81 +1,76 @@
-import { useApp } from '../context/AppContext';
-
 const statusColors = {
-  shipped: 'bg-[#9BCBBF]/20 text-[#9BCBBF]',
-  processing: 'bg-[#9BCBBF]/20 text-[#9BCBBF]',
-  printed: 'bg-[#9BCBBF]/20 text-[#9BCBBF]',
-  'on-hold': 'bg-[#9BCBBF]/20 text-[#9BCBBF]',
-  cancelled: 'bg-[#9BCBBF]/20 text-[#9BCBBF]'
+  pending: 'bg-yellow-100 text-yellow-700',
+  processing: 'bg-blue-100 text-blue-700',
+  printed: 'bg-purple-100 text-purple-700',
+  shipped: 'bg-green-100 text-green-700',
+  delivered: 'bg-emerald-100 text-emerald-700',
+  cancelled: 'bg-red-100 text-red-700',
+  'on-hold': 'bg-gray-100 text-gray-700',
 };
 
 const formatStatus = (status) => {
+  if (!status) return 'Unknown';
+
   return status
     .split('-')
     .map(word => word.charAt(0).toUpperCase() + word.slice(1))
     .join(' ');
 };
 
+const formatDate = (dateString) => {
+  if (!dateString) return '-';
+
+  const date = new Date(dateString);
+  return date.toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  });
+};
+
+const formatAmount = (amount) => {
+  const numericAmount = Number(amount || 0);
+  return `₹${numericAmount.toFixed(2)}`;
+};
+
 const MobileOrderCard = ({ order }) => {
-  const formatDate = (dateString) => {
-    const date = new Date(dateString);
-    return date.toLocaleDateString('en-US', { 
-      month: 'short', 
-      day: 'numeric', 
-      year: 'numeric' 
-    });
-  };
-
-  const formatAmount = (amount) => {
-    return `$${amount.toFixed(2)}`;
-  };
-
   return (
     <div className="bg-white border border-gray-200 rounded-lg p-4 mb-3">
-      
       <div className="flex justify-between items-start mb-2">
         <div>
           <h3 className="font-medium text-gray-900">
-            {order.customerName}
+            {order.customer_name}
           </h3>
 
-          {/* ✅ Order ID Green */}
           <p className="text-sm text-[#9BCBBF]">
-            {order.id}
+            {order.order_number}
           </p>
         </div>
 
-        <span className={`inline-flex px-2 py-1 text-xs font-medium rounded-full ${statusColors[order.status]}`}>
+        <span
+          className={`inline-flex px-2 py-1 text-xs font-medium rounded-full ${
+            statusColors[order.status] || 'bg-gray-100 text-gray-700'
+          }`}
+        >
           {formatStatus(order.status)}
         </span>
       </div>
 
       <p className="text-sm text-gray-600 mb-2">
-        {order.projectName}
+        Items: {order.items_count ?? 0}
       </p>
 
       <div className="flex justify-between items-center text-sm">
         <span className="text-gray-500">
-          {formatDate(order.dateReceived)}
+          {formatDate(order.created_at)}
         </span>
 
         <span className="font-semibold text-gray-900">
-          {formatAmount(order.totalAmount)}
+          {formatAmount(order.grand_total)}
         </span>
       </div>
     </div>
   );
 };
 
-const MobileOrderList = () => {
-  const { paginatedOrders } = useApp();
-
-  return (
-    <div className="md:hidden p-4">
-      {paginatedOrders.map((order) => (
-        <MobileOrderCard key={order.id} order={order} />
-      ))}
-    </div>
-  );
-};
-
-export default MobileOrderList;
+export default MobileOrderCard;
