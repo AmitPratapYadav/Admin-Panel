@@ -30,6 +30,14 @@ export function AdminAuthProvider({ children }) {
     bootstrap();
   }, [token]);
 
+  const refreshAdmin = async () => {
+    if (!token) return null;
+
+    const res = await api.get("/admin/me");
+    setAdmin(res.data.admin);
+    return res.data.admin;
+  };
+
   const login = async (email, password) => {
     const res = await api.post("/admin/login", { email, password });
 
@@ -61,6 +69,8 @@ export function AdminAuthProvider({ children }) {
         isAuthenticated: !!token,
         login,
         logout,
+        refreshAdmin,
+        setAdmin,
       }}
     >
       {children}

@@ -1,161 +1,139 @@
-import { 
-  LayoutDashboard, 
-  ShoppingCart, 
-  Package, 
-  Users, 
-  FolderOpen, 
-  BarChart3, 
-  Settings,
-  X
-} from 'lucide-react';
-
-import { useApp } from '../context/AppContext';
-import { NavLink, useNavigate } from 'react-router-dom';
-
-const iconMap = {
-  LayoutDashboard,
-  ShoppingCart,
-  Package,
-  Users,
-  FolderOpen,
+import { useMemo } from 'react';
+import { Link, NavLink } from 'react-router-dom';
+import {
   BarChart3,
-  Settings
-};
+  FileText,
+  LayoutDashboard,
+  Package,
+  Plus,
+  Settings,
+  ShoppingCart,
+  Store,
+  Users,
+  UserCog,
+  X,
+} from 'lucide-react';
+import { useApp } from '../context/AppContext';
+import { useAdminAuth } from '../context/AdminAuthContext';
 
-const menuItems = [
-  { name: 'Dashboard', icon: 'LayoutDashboard', path: '/dashboard' },
-  { name: 'Orders', icon: 'ShoppingCart', badge: 24, path: '/orders' },
-  { name: 'Products', icon: 'Package', path: '/products' },
-  { name: 'Customers', icon: 'Users', path: '/customers' },
-  { name: 'Files', icon: 'FolderOpen', path: '/files' },
-  { name: 'Reports', icon: 'BarChart3', path: '/reports' },
+const baseMenuItems = [
+  { key: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, path: '/dashboard' },
+  { key: 'orders', label: 'Orders', icon: ShoppingCart, path: '/orders' },
+  { key: 'vendors', label: 'Vendors', icon: Store, path: '/vendors' },
+  { key: 'products', label: 'Products', icon: Package, path: '/products' },
+  { key: 'customers', label: 'Customers', icon: Users, path: '/customers' },
+  { key: 'inquiries', label: 'Inquiries', icon: FileText, path: '/inquiries' },
+  { key: 'reports', label: 'Reports', icon: BarChart3, path: '/reports' },
+  { key: 'staff', label: 'Staff', icon: UserCog, path: '/staff' },
 ];
 
 const Sidebar = ({ isMobile = false, onClose }) => {
-
   const { sidebarOpen, setSidebarOpen } = useApp();
-  const navigate = useNavigate();
+  const { admin } = useAdminAuth();
 
-  const handleClose = () => {
-    if (isMobile) {
-      setSidebarOpen(false);
-      if (onClose) onClose();
-    }
+  const isSuperAdmin = admin?.role === 'admin';
+  const permissions = admin?.permissions || [];
+
+  const menuItems = useMemo(
+    () =>
+      baseMenuItems.filter((item) => {
+        if (isSuperAdmin) return true;
+        return permissions.includes(item.key);
+      }),
+    [isSuperAdmin, permissions]
+  );
+
+  const canCreateOrders = isSuperAdmin || permissions.includes('orders');
+  const canAccessSettings = Boolean(admin);
+  const shouldShowMobile = isMobile && sidebarOpen;
+
+  const closeSidebar = () => {
+    setSidebarOpen(false);
+    onClose?.();
   };
 
-  return (
-    <>
-      {isMobile && sidebarOpen && (
-        <div
-          className="fixed inset-0 bg-black/40 z-40"
-          onClick={handleClose}
-        />
-      )}
+  const sidebarContent = (
+    <aside className="flex h-full flex-col overflow-y-auto bg-[#1b2435] text-white">
+      <div className="flex items-center justify-between px-6 pt-6">
+        <Link to="/dashboard" className="block" onClick={isMobile ? closeSidebar : undefined}>
+          <img src="/logo.png" alt="Ziva Print" className="h-12 w-auto" />
+        </Link>
 
-      <div
-        className={`
-        ${isMobile
-          ? `fixed left-0 top-0 h-full w-64 z-50 transform transition-transform duration-300
-            ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}`
-          : 'fixed left-0 top-0 h-screen w-64'
-        }
-        bg-gradient-to-b from-slate-900 via-slate-800 to-slate-900
-        flex flex-col
-      `}
-      >
-
-        {isMobile && (
-          <button
-            onClick={handleClose}
-            className="absolute top-4 right-4 text-white"
-          >
-            <X size={22} />
+        {isMobile ? (
+          <button onClick={closeSidebar} className="rounded-full p-2 text-white/80 hover:bg-white/10">
+            <X size={20} />
           </button>
-        )}
+        ) : null}
+      </div>
 
-        {/* Logo */}
-        <div className="py-4 flex items-center justify-center">
-          <img
-            src="/logo.png"
-            alt="Zivaprint Logo"
-            className="h-10 object-contain"
-          />
-        </div>
-
-        {/* ✅ NEW ORDER BUTTON */}
-        <div className="px-6 pb-6">
-          <button
-            onClick={() => {
-              navigate('/new-order');
-              handleClose();
-            }}
-            className="w-full bg-[#9BCBBF] text-white py-3 rounded-lg flex items-center justify-center gap-2 hover:opacity-90 transition"
+      {canCreateOrders ? (
+        <div className="px-5 pt-6">
+          <Link
+            to="/new-order"
+            onClick={isMobile ? closeSidebar : undefined}
+            className="flex items-center justify-center gap-2 rounded-2xl bg-[#9BCBBF] px-4 py-4 text-lg font-medium text-white transition hover:opacity-90"
           >
-            <span>+</span>
-            <span>New Order</span>
-          </button>
+            <Plus size={18} />
+            New Order
+          </Link>
         </div>
+      ) : null}
 
-        <nav className="flex-1 px-3">
+      <nav className="mt-8 flex-1 space-y-1 px-3 pb-6">
+        {menuItems.map((item) => {
+          const Icon = item.icon;
 
-          {menuItems.map((item) => {
+          return (
+            <NavLink
+              key={item.key}
+              to={item.path}
+              onClick={isMobile ? closeSidebar : undefined}
+              className={({ isActive }) =>
+                `flex items-center gap-3 rounded-2xl px-4 py-4 text-base font-medium transition ${
+                  isActive
+                  ? 'bg-[#9BCBBF] text-white'
+                    : 'text-white/90 hover:bg-white/10 hover:text-white'
+                }`
+              }
+            >
+              <Icon size={20} />
+              <span>{item.label}</span>
+            </NavLink>
+          );
+        })}
+      </nav>
 
-            const Icon = iconMap[item.icon];
-
-            return (
-              <NavLink
-                key={item.name}
-                to={item.path}
-                onClick={handleClose}
-                className={({ isActive }) =>
-                  `flex items-center justify-between px-4 py-3 rounded-lg mb-1 transition
-                  ${isActive
-                    ? 'bg-[#9BCBBF] text-white'
-                    : 'text-gray-300 hover:bg-slate-700 hover:text-white'
-                  }`
-                }
-              >
-
-                <div className="flex items-center gap-3">
-                  <Icon size={20} />
-                  <span className="font-medium">{item.name}</span>
-                </div>
-
-                {item.badge && (
-                  <span className="bg-[#9BCBBF] text-white text-xs px-2 py-0.5 rounded-full">
-                    {item.badge}
-                  </span>
-                )}
-
-              </NavLink>
-            );
-
-          })}
-
-        </nav>
-
-        <div className="p-3 border-t border-slate-700">
-
+      {canAccessSettings ? (
+        <div className="border-t border-white/10 px-3 py-5">
           <NavLink
             to="/settings"
-            onClick={handleClose}
+            onClick={isMobile ? closeSidebar : undefined}
             className={({ isActive }) =>
-              `flex items-center gap-3 px-4 py-3 rounded-lg transition
-              ${isActive
-                ? 'bg-[#9BCBBF] text-white'
-                : 'text-gray-300 hover:bg-slate-700 hover:text-white'
+              `flex items-center gap-3 rounded-2xl px-4 py-4 text-base font-medium transition ${
+                isActive
+                  ? 'bg-[#9BCBBF] text-white'
+                  : 'text-white/90 hover:bg-white/10 hover:text-white'
               }`
             }
           >
             <Settings size={20} />
-            <span className="font-medium">Settings</span>
+            <span>Settings</span>
           </NavLink>
-
         </div>
-
-      </div>
-    </>
+      ) : null}
+    </aside>
   );
+
+  if (!isMobile) {
+    return <div className="fixed inset-y-0 left-0 z-30 w-64 overflow-hidden">{sidebarContent}</div>;
+  }
+
+  return shouldShowMobile ? (
+    <div className="fixed inset-0 z-40 md:hidden">
+      <button className="absolute inset-0 bg-slate-900/50" onClick={closeSidebar} aria-label="Close sidebar" />
+      <div className="relative h-full w-72 max-w-[85vw] shadow-2xl">{sidebarContent}</div>
+    </div>
+  ) : null;
 };
 
 export default Sidebar;

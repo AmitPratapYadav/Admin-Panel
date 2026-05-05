@@ -1,53 +1,26 @@
-import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { Link } from 'react-router-dom';
-
-const statusColors = {
-  pending: 'bg-yellow-100 text-yellow-700',
-  processing: 'bg-blue-100 text-blue-700',
-  printed: 'bg-purple-100 text-purple-700',
-  shipped: 'bg-green-100 text-green-700',
-  dispatched: 'bg-green-100 text-green-700',
-  delivered: 'bg-emerald-100 text-emerald-700',
-  cancelled: 'bg-red-100 text-red-700',
-  accepted: 'bg-emerald-100 text-emerald-700',
-  rejected: 'bg-red-100 text-red-700',
-  unassigned: 'bg-slate-100 text-slate-700',
-};
-
-const formatStatus = (status) => {
-  if (!status) return 'Unknown';
-
-  return status
-    .split('-')
-    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-    .join(' ');
-};
+import { ChevronLeft, ChevronRight } from 'lucide-react';
 
 const formatDate = (dateString) => {
   if (!dateString) return '-';
 
-  const date = new Date(dateString);
-
-  return date.toLocaleDateString('en-US', {
+  return new Date(dateString).toLocaleDateString('en-US', {
     month: 'short',
     day: 'numeric',
     year: 'numeric',
   });
 };
 
-const formatAmount = (amount) => {
-  const numericAmount = Number(amount || 0);
-  return `Rs ${numericAmount.toFixed(2)}`;
-};
-
-const OrdersTable = ({
-  orders = [],
+const VendorsTable = ({
+  vendors = [],
   currentPage = 1,
   setCurrentPage = () => {},
   rowsPerPage = 10,
   setRowsPerPage = () => {},
   totalPages = 1,
   totalItems = 0,
+  actionLoadingId = null,
+  onToggleOnline = () => {},
 }) => {
   const start = totalItems === 0 ? 0 : (currentPage - 1) * rowsPerPage + 1;
   const end = Math.min(currentPage * rowsPerPage, totalItems);
@@ -58,96 +31,121 @@ const OrdersTable = ({
         <table className="w-full">
           <thead className="bg-gray-50 border-b border-gray-200">
             <tr>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Order / Customer
+              <th className="px-4 py-3 text-left">
+                <input type="checkbox" className="w-4 h-4 rounded border-gray-300" />
               </th>
               <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                 Vendor
               </th>
               <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Items
+                Contact
+              </th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                Zone / City
+              </th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                Radius
               </th>
               <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                 Status
               </th>
               <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Date
+                Last Seen
               </th>
               <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Total
-              </th>
-              <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Action
+                Actions
               </th>
             </tr>
           </thead>
 
           <tbody className="divide-y divide-gray-200">
-            {orders.length === 0 ? (
+            {vendors.length === 0 ? (
               <tr>
-                <td colSpan="7" className="px-4 py-8 text-center text-gray-500">
-                  No orders found.
+                <td colSpan="8" className="px-4 py-8 text-center text-gray-500">
+                  No vendors found.
                 </td>
               </tr>
             ) : (
-              orders.map((order) => (
-                <tr key={order.id} className="hover:bg-gray-50 transition-colors">
+              vendors.map((vendor) => (
+                <tr key={vendor.id} className="hover:bg-gray-50 transition-colors">
+                  <td className="px-4 py-4">
+                    <input type="checkbox" className="w-4 h-4 rounded border-gray-300" />
+                  </td>
+
                   <td className="px-4 py-4">
                     <div className="flex flex-col">
                       <span className="text-sm font-medium text-[#9BCBBF]">
-                        {order.order_number}
+                        {vendor.business_name}
                       </span>
-                      <span className="text-sm text-gray-900">
-                        {order.customer_name}
-                      </span>
-                      <span className="text-xs text-gray-500">
-                        {order.customer_email || order.customer_phone || '-'}
-                      </span>
+                      <span className="text-xs text-gray-500">{vendor.vendor_code}</span>
                     </div>
                   </td>
 
                   <td className="px-4 py-4 text-sm text-gray-600">
-                    {order.current_vendor_name || 'Unassigned'}
+                    <div>{vendor.contact_person_name || '-'}</div>
+                    <div className="text-xs text-gray-500">{vendor.email}</div>
+                    <div className="text-xs text-gray-500">{vendor.phone}</div>
                   </td>
 
                   <td className="px-4 py-4 text-sm text-gray-600">
-                    {order.items_count ?? 0}
+                    <div>{vendor.zone_name || '-'}</div>
+                    <div className="text-xs text-gray-500">{vendor.city_name || '-'}</div>
+                  </td>
+
+                  <td className="px-4 py-4 text-sm text-gray-600">
+                    {Number(vendor.service_radius_km || 0).toFixed(1)} km
                   </td>
 
                   <td className="px-4 py-4">
                     <div className="flex flex-col gap-2">
                       <span
                         className={`inline-flex w-fit px-2 py-1 text-xs font-medium rounded-full ${
-                          statusColors[order.status] || 'bg-gray-100 text-gray-700'
+                          vendor.is_online
+                            ? 'bg-emerald-100 text-emerald-700'
+                            : 'bg-gray-100 text-gray-700'
                         }`}
                       >
-                        {formatStatus(order.status)}
+                        {vendor.is_online ? 'Online' : 'Offline'}
                       </span>
                       <span
                         className={`inline-flex w-fit px-2 py-1 text-xs font-medium rounded-full ${
-                          statusColors[order.vendor_assignment_status] || 'bg-slate-100 text-slate-700'
+                          vendor.is_active
+                            ? 'bg-blue-100 text-blue-700'
+                            : 'bg-red-100 text-red-700'
                         }`}
                       >
-                        {formatStatus(order.vendor_assignment_status || 'unassigned')}
+                        {vendor.is_active ? 'Active' : 'Inactive'}
                       </span>
                     </div>
                   </td>
 
                   <td className="px-4 py-4 text-sm text-gray-600">
-                    {formatDate(order.created_at)}
+                    {formatDate(vendor.last_seen_at || vendor.created_at)}
                   </td>
 
-                  <td className="px-4 py-4 text-sm font-medium text-gray-900 text-right">
-                    {formatAmount(order.grand_total)}
-                  </td>
+                  <td className="px-4 py-4">
+                    <div className="flex items-center justify-end gap-2">
+                      <Link
+                        to={`/vendors/${vendor.id}`}
+                        className="rounded-lg border border-gray-200 px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50"
+                      >
+                        View
+                      </Link>
 
-                  <td className="px-4 py-4 text-right">
-                    <Link
-                      to={`/orders/${order.id}`}
-                      className="inline-flex rounded-lg border border-gray-200 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
-                    >
-                      Manage
-                    </Link>
+                      <button
+                        onClick={() => onToggleOnline(vendor)}
+                        disabled={actionLoadingId === vendor.id}
+                        className={`rounded-lg px-3 py-2 text-xs font-medium text-white ${
+                          vendor.is_online ? 'bg-slate-700' : 'bg-[#9BCBBF]'
+                        } disabled:opacity-60`}
+                      >
+                        {actionLoadingId === vendor.id
+                          ? 'Saving...'
+                          : vendor.is_online
+                          ? 'Go Offline'
+                          : 'Go Online'}
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))
@@ -203,4 +201,4 @@ const OrdersTable = ({
   );
 };
 
-export default OrdersTable;
+export default VendorsTable;

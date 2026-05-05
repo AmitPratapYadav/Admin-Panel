@@ -1,53 +1,16 @@
-import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import { ChevronLeft, ChevronRight } from 'lucide-react';
 
-const statusColors = {
-  pending: 'bg-yellow-100 text-yellow-700',
-  processing: 'bg-blue-100 text-blue-700',
-  printed: 'bg-purple-100 text-purple-700',
-  shipped: 'bg-green-100 text-green-700',
-  dispatched: 'bg-green-100 text-green-700',
-  delivered: 'bg-emerald-100 text-emerald-700',
-  cancelled: 'bg-red-100 text-red-700',
-  accepted: 'bg-emerald-100 text-emerald-700',
-  rejected: 'bg-red-100 text-red-700',
-  unassigned: 'bg-slate-100 text-slate-700',
-};
-
-const formatStatus = (status) => {
-  if (!status) return 'Unknown';
-
-  return status
-    .split('-')
-    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-    .join(' ');
-};
-
-const formatDate = (dateString) => {
-  if (!dateString) return '-';
-
-  const date = new Date(dateString);
-
-  return date.toLocaleDateString('en-US', {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-  });
-};
-
-const formatAmount = (amount) => {
-  const numericAmount = Number(amount || 0);
-  return `Rs ${numericAmount.toFixed(2)}`;
-};
-
-const OrdersTable = ({
-  orders = [],
+const CategoriesTable = ({
+  categories = [],
   currentPage = 1,
   setCurrentPage = () => {},
   rowsPerPage = 10,
   setRowsPerPage = () => {},
   totalPages = 1,
   totalItems = 0,
+  actionLoadingId = null,
+  onToggleStatus = () => {},
 }) => {
   const start = totalItems === 0 ? 0 : (currentPage - 1) * rowsPerPage + 1;
   const end = Math.min(currentPage * rowsPerPage, totalItems);
@@ -59,95 +22,102 @@ const OrdersTable = ({
           <thead className="bg-gray-50 border-b border-gray-200">
             <tr>
               <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Order / Customer
+                Category
               </th>
               <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Vendor
+                Level
               </th>
               <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Items
+                Parent
+              </th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                Counts
               </th>
               <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                 Status
               </th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Date
-              </th>
               <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Total
-              </th>
-              <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Action
+                Actions
               </th>
             </tr>
           </thead>
 
           <tbody className="divide-y divide-gray-200">
-            {orders.length === 0 ? (
+            {categories.length === 0 ? (
               <tr>
-                <td colSpan="7" className="px-4 py-8 text-center text-gray-500">
-                  No orders found.
+                <td colSpan="6" className="px-4 py-8 text-center text-gray-500">
+                  No categories found.
                 </td>
               </tr>
             ) : (
-              orders.map((order) => (
-                <tr key={order.id} className="hover:bg-gray-50 transition-colors">
+              categories.map((category) => (
+                <tr key={category.id} className="hover:bg-gray-50 transition-colors">
                   <td className="px-4 py-4">
-                    <div className="flex flex-col">
-                      <span className="text-sm font-medium text-[#9BCBBF]">
-                        {order.order_number}
-                      </span>
-                      <span className="text-sm text-gray-900">
-                        {order.customer_name}
-                      </span>
-                      <span className="text-xs text-gray-500">
-                        {order.customer_email || order.customer_phone || '-'}
-                      </span>
+                    <div className="flex items-center gap-3">
+                      <div className="h-12 w-12 overflow-hidden rounded-lg border border-gray-200 bg-gray-50">
+                        {category.image ? (
+                          <img
+                            src={category.image}
+                            alt={category.name}
+                            className="h-full w-full object-cover"
+                          />
+                        ) : null}
+                      </div>
+                      <div>
+                        <div className="text-sm font-medium text-gray-900">{category.name}</div>
+                        <div className="text-xs text-gray-500">{category.slug}</div>
+                      </div>
                     </div>
                   </td>
 
                   <td className="px-4 py-4 text-sm text-gray-600">
-                    {order.current_vendor_name || 'Unassigned'}
+                    {category.level === 'subcategory' ? 'Subcategory' : 'Main Category'}
                   </td>
 
                   <td className="px-4 py-4 text-sm text-gray-600">
-                    {order.items_count ?? 0}
+                    {category.parent_name || '-'}
+                  </td>
+
+                  <td className="px-4 py-4 text-sm text-gray-600">
+                    <div>{category.products_count} product links</div>
+                    <div className="text-xs text-gray-500">{category.children_count} children</div>
                   </td>
 
                   <td className="px-4 py-4">
-                    <div className="flex flex-col gap-2">
-                      <span
-                        className={`inline-flex w-fit px-2 py-1 text-xs font-medium rounded-full ${
-                          statusColors[order.status] || 'bg-gray-100 text-gray-700'
-                        }`}
-                      >
-                        {formatStatus(order.status)}
-                      </span>
-                      <span
-                        className={`inline-flex w-fit px-2 py-1 text-xs font-medium rounded-full ${
-                          statusColors[order.vendor_assignment_status] || 'bg-slate-100 text-slate-700'
-                        }`}
-                      >
-                        {formatStatus(order.vendor_assignment_status || 'unassigned')}
-                      </span>
-                    </div>
-                  </td>
-
-                  <td className="px-4 py-4 text-sm text-gray-600">
-                    {formatDate(order.created_at)}
-                  </td>
-
-                  <td className="px-4 py-4 text-sm font-medium text-gray-900 text-right">
-                    {formatAmount(order.grand_total)}
-                  </td>
-
-                  <td className="px-4 py-4 text-right">
-                    <Link
-                      to={`/orders/${order.id}`}
-                      className="inline-flex rounded-lg border border-gray-200 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+                    <span
+                      className={`inline-flex rounded-full px-2 py-1 text-xs font-medium ${
+                        category.is_active
+                          ? 'bg-emerald-100 text-emerald-700'
+                          : 'bg-gray-100 text-gray-700'
+                      }`}
                     >
-                      Manage
-                    </Link>
+                      {category.is_active ? 'Live' : 'Archived'}
+                    </span>
+                  </td>
+
+                  <td className="px-4 py-4">
+                    <div className="flex items-center justify-end gap-2">
+                      <Link
+                        to={`/products/categories/${category.id}`}
+                        className="rounded-lg border border-gray-200 px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50"
+                      >
+                        View
+                      </Link>
+
+                      <button
+                        onClick={() => onToggleStatus(category)}
+                        disabled={actionLoadingId === category.id}
+                        className={`rounded-lg px-3 py-2 text-xs font-medium text-white ${
+                          category.is_active ? 'bg-slate-700' : 'bg-[#9BCBBF]'
+                        } disabled:opacity-60`}
+                      >
+                        {actionLoadingId === category.id
+                          ? 'Saving...'
+                          : category.is_active
+                          ? 'Archive'
+                          : 'Make Live'}
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))
@@ -159,7 +129,6 @@ const OrdersTable = ({
       <div className="bg-white border-t border-gray-200 px-4 py-3 flex items-center justify-between">
         <div className="flex items-center gap-2">
           <span className="text-sm text-gray-600">Rows per page:</span>
-
           <select
             value={rowsPerPage}
             onChange={(e) => {
@@ -179,7 +148,6 @@ const OrdersTable = ({
           <span className="text-sm text-gray-600">
             {start}-{end} of {totalItems}
           </span>
-
           <div className="flex gap-1">
             <button
               onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
@@ -188,7 +156,6 @@ const OrdersTable = ({
             >
               <ChevronLeft size={18} className="text-gray-600" />
             </button>
-
             <button
               onClick={() => setCurrentPage(Math.min(totalPages, currentPage + 1))}
               disabled={currentPage === totalPages}
@@ -203,4 +170,4 @@ const OrdersTable = ({
   );
 };
 
-export default OrdersTable;
+export default CategoriesTable;

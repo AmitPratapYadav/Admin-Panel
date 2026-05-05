@@ -2,30 +2,36 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Plus, Search } from 'lucide-react';
 import CatalogTabs from '../components/CatalogTabs';
-import ProductsTable from '../components/ProductsTable';
+import CategoriesTable from '../components/CategoriesTable';
 import {
   extractApiError,
+  fetchAdminCategories,
   fetchAdminCategoriesTree,
-  fetchAdminProducts,
-  toggleAdminProductStatus,
+  toggleAdminCategoryStatus,
 } from '../services/catalog';
 import { useAdminAuth } from '../context/AdminAuthContext';
 import PermissionNotice from '../components/PermissionNotice';
 
-const ProductsPage = () => {
+const CategoriesPage = () => {
   const { admin } = useAdminAuth();
-  const [products, setProducts] = useState([]);
+  const [categories, setCategories] = useState([]);
   const [categoryTree, setCategoryTree] = useState([]);
-  const [summary, setSummary] = useState({ total: 0, live: 0, archived: 0, featured: 0 });
+  const [summary, setSummary] = useState({
+    total: 0,
+    live: 0,
+    archived: 0,
+    main_categories: 0,
+    subcategories: 0,
+  });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [actionLoadingId, setActionLoadingId] = useState(null);
 
   const [searchInput, setSearchInput] = useState('');
   const [search, setSearch] = useState('');
-  const [categoryId, setCategoryId] = useState('');
-  const [subcategoryId, setSubcategoryId] = useState('');
   const [status, setStatus] = useState('all');
+  const [type, setType] = useState('all');
+  const [parentId, setParentId] = useState('');
   const [rowsPerPage, setRowsPerPage] = useState(10);
   const [currentPage, setCurrentPage] = useState(1);
   const [totalItems, setTotalItems] = useState(0);
@@ -42,7 +48,7 @@ const ProductsPage = () => {
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [search, categoryId, subcategoryId, status, rowsPerPage]);
+  }, [search, status, type, parentId, rowsPerPage]);
 
   useEffect(() => {
     if (!canView) {
@@ -62,26 +68,32 @@ const ProductsPage = () => {
     loadCategoryTree();
   }, [canView]);
 
-  const loadProducts = async () => {
+  const loadCategories = async () => {
     try {
       setLoading(true);
       setError('');
 
-      const data = await fetchAdminProducts({
+      const data = await fetchAdminCategories({
         page: currentPage,
         perPage: rowsPerPage,
         search,
         status,
-        categoryId,
-        subcategoryId,
+        type,
+        parentId,
       });
 
-      setProducts(data?.data || []);
-      setSummary(data?.summary || { total: 0, live: 0, archived: 0, featured: 0 });
+      setCategories(data?.data || []);
+      setSummary(data?.summary || {
+        total: 0,
+        live: 0,
+        archived: 0,
+        main_categories: 0,
+        subcategories: 0,
+      });
       setTotalItems(data?.total || 0);
       setTotalPages(data?.last_page || 1);
     } catch (err) {
-      setError(extractApiError(err, 'Failed to load products.'));
+      setError(extractApiError(err, 'Failed to load categories.'));
     } finally {
       setLoading(false);
     }
@@ -89,34 +101,29 @@ const ProductsPage = () => {
 
   useEffect(() => {
     if (canView) {
-      loadProducts();
+      loadCategories();
     } else {
       setLoading(false);
     }
-  }, [canView, currentPage, rowsPerPage, search, categoryId, subcategoryId, status]);
-
-  const selectedCategory = useMemo(
-    () => categoryTree.find((category) => Number(category.id) === Number(categoryId)),
-    [categoryTree, categoryId]
-  );
+  }, [canView, currentPage, rowsPerPage, search, status, type, parentId]);
 
   const summaryCards = useMemo(
     () => [
-      { label: 'Total Products', value: summary.total, accent: 'text-slate-900' },
-      { label: 'Live Products', value: summary.live, accent: 'text-emerald-600' },
-      { label: 'Archived Products', value: summary.archived, accent: 'text-gray-600' },
-      { label: 'Featured Products', value: summary.featured, accent: 'text-blue-600' },
+      { label: 'Total Categories', value: summary.total, accent: 'text-slate-900' },
+      { label: 'Main Categories', value: summary.main_categories, accent: 'text-blue-600' },
+      { label: 'Subcategories', value: summary.subcategories, accent: 'text-violet-600' },
+      { label: 'Archived', value: summary.archived, accent: 'text-gray-600' },
     ],
     [summary]
   );
 
-  const handleToggleStatus = async (product) => {
+  const handleToggleStatus = async (category) => {
     try {
-      setActionLoadingId(product.id);
-      await toggleAdminProductStatus(product.id, !product.is_active);
-      await loadProducts();
+      setActionLoadingId(category.id);
+      await toggleAdminCategoryStatus(category.id, !category.is_active);
+      await loadCategories();
     } catch (err) {
-      alert(extractApiError(err, 'Unable to update product status.'));
+      alert(extractApiError(err, 'Unable to update category status.'));
     } finally {
       setActionLoadingId(null);
     }
@@ -130,8 +137,8 @@ const ProductsPage = () => {
     return (
       <div>
         <CatalogTabs />
-        <h1 className="text-2xl font-bold text-gray-900 mb-4">Product Management</h1>
-        <div className="bg-white rounded-xl border p-6">Loading products...</div>
+        <h1 className="text-2xl font-bold text-gray-900 mb-4">Category Management</h1>
+        <div className="bg-white rounded-xl border p-6">Loading categories...</div>
       </div>
     );
   }
@@ -142,28 +149,19 @@ const ProductsPage = () => {
 
       <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-6 gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Product Management</h1>
+          <h1 className="text-2xl font-bold text-gray-900">Category Management</h1>
           <p className="text-gray-600 text-sm">
-            Manage sellable products, quantity brackets, images, and product-level variant pricing.
+            Create main categories, subcategories, and reusable variant templates.
           </p>
         </div>
 
-        <div className="flex items-center gap-3">
-          <Link
-            to="/products/categories"
-            className="rounded-lg border border-gray-200 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
-          >
-            Manage Categories
-          </Link>
-
-          <Link
-            to="/products/new"
-            className="flex items-center gap-2 px-4 py-2 rounded-lg bg-[#9BCBBF] text-white transition-all duration-200 hover:opacity-90"
-          >
-            <Plus size={16} />
-            Add Product
-          </Link>
-        </div>
+        <Link
+          to="/products/categories/new"
+          className="flex items-center gap-2 px-4 py-2 rounded-lg bg-[#9BCBBF] text-white transition-all duration-200 hover:opacity-90"
+        >
+          <Plus size={16} />
+          Add Category
+        </Link>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
@@ -176,44 +174,45 @@ const ProductsPage = () => {
       </div>
 
       <div className="bg-white border border-gray-200 rounded-xl p-4 mb-6">
-        <div className="grid grid-cols-1 lg:grid-cols-[1.6fr_1fr_1fr_1fr_auto] gap-3">
+        <div className="grid grid-cols-1 lg:grid-cols-[1.5fr_1fr_1fr_1fr_auto] gap-3">
           <div className="relative">
             <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
             <input
               type="text"
               value={searchInput}
               onChange={(e) => setSearchInput(e.target.value)}
-              placeholder="Search product by name, slug, description..."
+              placeholder="Search category by name, slug..."
               className="w-full rounded-lg border border-gray-200 pl-9 pr-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#9BCBBF]"
             />
           </div>
 
           <select
-            value={categoryId}
+            value={type}
             onChange={(e) => {
-              setCategoryId(e.target.value);
-              setSubcategoryId('');
+              setType(e.target.value);
+              if (e.target.value === 'main') {
+                setParentId('root');
+              } else if (e.target.value === 'sub' && parentId === 'root') {
+                setParentId('');
+              }
             }}
             className="rounded-lg border border-gray-200 px-4 py-2.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#9BCBBF]"
           >
-            <option value="">All Categories</option>
-            {categoryTree.map((category) => (
-              <option key={category.id} value={category.id}>
-                {category.name}
-              </option>
-            ))}
+            <option value="all">All Types</option>
+            <option value="main">Main Categories</option>
+            <option value="sub">Subcategories</option>
           </select>
 
           <select
-            value={subcategoryId}
-            onChange={(e) => setSubcategoryId(e.target.value)}
+            value={parentId}
+            onChange={(e) => setParentId(e.target.value)}
             className="rounded-lg border border-gray-200 px-4 py-2.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#9BCBBF]"
-            disabled={!selectedCategory}
           >
-            <option value="">All Subcategories</option>
-            {(selectedCategory?.children || []).map((child) => (
-              <option key={child.id} value={child.id}>
-                {child.name}
+            <option value="">All Parents</option>
+            <option value="root">Only Main Categories</option>
+            {categoryTree.map((category) => (
+              <option key={category.id} value={category.id}>
+                {category.name}
               </option>
             ))}
           </select>
@@ -232,9 +231,9 @@ const ProductsPage = () => {
             onClick={() => {
               setSearchInput('');
               setSearch('');
-              setCategoryId('');
-              setSubcategoryId('');
               setStatus('all');
+              setType('all');
+              setParentId('');
             }}
             className="rounded-lg border border-gray-200 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50"
           >
@@ -250,8 +249,8 @@ const ProductsPage = () => {
       ) : null}
 
       <div className="hidden md:block">
-        <ProductsTable
-          products={products}
+        <CategoriesTable
+          categories={categories}
           currentPage={currentPage}
           setCurrentPage={setCurrentPage}
           rowsPerPage={rowsPerPage}
@@ -264,51 +263,51 @@ const ProductsPage = () => {
       </div>
 
       <div className="md:hidden space-y-4">
-        {products.length === 0 ? (
+        {categories.length === 0 ? (
           <div className="bg-white border border-gray-200 rounded-xl p-6 text-center text-gray-500">
-            No products found.
+            No categories found.
           </div>
         ) : (
-          products.map((product) => (
-            <div key={product.id} className="bg-white border border-gray-200 rounded-xl p-4">
+          categories.map((category) => (
+            <div key={category.id} className="bg-white border border-gray-200 rounded-xl p-4">
               <div className="flex items-start gap-3">
                 <div className="h-14 w-14 overflow-hidden rounded-lg border border-gray-200 bg-gray-50 shrink-0">
-                  {product.hero_image_url ? (
-                    <img src={product.hero_image_url} alt={product.name} className="h-full w-full object-cover" />
+                  {category.image ? (
+                    <img src={category.image} alt={category.name} className="h-full w-full object-cover" />
                   ) : null}
                 </div>
                 <div className="flex-1">
-                  <p className="text-sm font-semibold text-gray-900">{product.name}</p>
-                  <p className="text-xs text-gray-500">{product.category_name} / {product.subcategory_name || 'No subcategory'}</p>
-                  <p className="text-xs text-gray-500 mt-2">Starting Rs. {Number(product.starting_price || 0).toFixed(2)}</p>
+                  <p className="text-sm font-semibold text-gray-900">{category.name}</p>
+                  <p className="text-xs text-gray-500">{category.level === 'subcategory' ? 'Subcategory' : 'Main Category'}</p>
+                  <p className="text-xs text-gray-500 mt-2">{category.parent_name || 'No parent category'}</p>
                 </div>
                 <span
                   className={`inline-flex px-2 py-1 text-xs font-medium rounded-full ${
-                    product.is_active ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-100 text-gray-700'
+                    category.is_active ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-100 text-gray-700'
                   }`}
                 >
-                  {product.is_active ? 'Live' : 'Archived'}
+                  {category.is_active ? 'Live' : 'Archived'}
                 </span>
               </div>
 
               <div className="mt-4 flex items-center gap-2">
                 <Link
-                  to={`/products/${product.id}`}
+                  to={`/products/categories/${category.id}`}
                   className="flex-1 text-center rounded-lg border border-gray-200 px-3 py-2 text-sm font-medium text-gray-700"
                 >
                   View
                 </Link>
 
                 <button
-                  onClick={() => handleToggleStatus(product)}
-                  disabled={actionLoadingId === product.id}
+                  onClick={() => handleToggleStatus(category)}
+                  disabled={actionLoadingId === category.id}
                   className={`flex-1 rounded-lg px-3 py-2 text-sm font-medium text-white ${
-                    product.is_active ? 'bg-slate-700' : 'bg-[#9BCBBF]'
+                    category.is_active ? 'bg-slate-700' : 'bg-[#9BCBBF]'
                   } disabled:opacity-60`}
                 >
-                  {actionLoadingId === product.id
+                  {actionLoadingId === category.id
                     ? 'Saving...'
-                    : product.is_active
+                    : category.is_active
                     ? 'Archive'
                     : 'Make Live'}
                 </button>
@@ -321,4 +320,4 @@ const ProductsPage = () => {
   );
 };
 
-export default ProductsPage;
+export default CategoriesPage;
