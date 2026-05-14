@@ -27,6 +27,8 @@ import LoginPage from './pages/LoginPage';
 import StaffPage from './pages/StaffPage';
 import StaffProfilePage from './pages/StaffProfilePage';
 import InquiriesPage from './pages/InquiriesPage';
+import VendorEnquiriesPage from './pages/VendorEnquiriesPage';
+import VendorEnquiryDetailsPage from './pages/VendorEnquiryDetailsPage';
 
 const Layout = ({ children }) => {
   const { sidebarOpen, setSidebarOpen } = useApp();
@@ -102,6 +104,8 @@ const ProtectedLayout = () => {
           <Route path="/orders/:id" element={<OrderDetailsPage />} />
           <Route path="/vendors" element={<VendorsPage />} />
           <Route path="/vendors/new" element={<VendorProfilePage />} />
+          <Route path="/vendors/enquiries" element={<VendorEnquiriesPage />} />
+          <Route path="/vendors/enquiries/:id" element={<VendorEnquiryDetailsPage />} />
           <Route path="/vendors/:id" element={<VendorProfilePage />} />
           <Route path="/new-order" element={<NewOrderPage />} />
           <Route path="/products" element={<ProductsPage />} />

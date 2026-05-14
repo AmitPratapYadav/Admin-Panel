@@ -3,7 +3,7 @@ import { Bell, Menu, Search } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useApp } from "../context/AppContext";
 import { useAdminAuth } from "../context/AdminAuthContext";
-import { extractApiError, searchAdminGlobal } from "../services/admin";
+import { extractApiError, fetchAdminNotifications, markAdminNotificationRead, searchAdminGlobal } from "../services/admin";
 
 const Topbar = ({ onMenuClick, showMenuButton = false }) => {
   const {
@@ -14,9 +14,13 @@ const Topbar = ({ onMenuClick, showMenuButton = false }) => {
 
   const dropdownRef = useRef(null);
   const searchRef = useRef(null);
+  const notificationRef = useRef(null);
   const navigate = useNavigate();
 
   const [notificationOpen, setNotificationOpen] = useState(false);
+  const [notifications, setNotifications] = useState([]);
+  const [notificationUnreadCount, setNotificationUnreadCount] = useState(0);
+  const [notificationLoading, setNotificationLoading] = useState(false);
   const [searchValue, setSearchValue] = useState("");
   const [searchResults, setSearchResults] = useState([]);
   const [searchLoading, setSearchLoading] = useState(false);
@@ -36,6 +40,9 @@ const Topbar = ({ onMenuClick, showMenuButton = false }) => {
     const handleClickOutside = (event) => {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
         setProfileDropdownOpen(false);
+      }
+
+      if (notificationRef.current && !notificationRef.current.contains(event.target)) {
         setNotificationOpen(false);
       }
 
@@ -77,9 +84,58 @@ const Topbar = ({ onMenuClick, showMenuButton = false }) => {
     return () => window.clearTimeout(timer);
   }, [searchValue]);
 
+  useEffect(() => {
+    let mounted = true;
+
+    const loadNotifications = async () => {
+      try {
+        setNotificationLoading(true);
+        const data = await fetchAdminNotifications();
+        if (!mounted) return;
+        setNotifications(data?.notifications || []);
+        setNotificationUnreadCount(data?.unread_count || 0);
+      } catch {
+        if (!mounted) return;
+        setNotifications([]);
+        setNotificationUnreadCount(0);
+      } finally {
+        if (mounted) {
+          setNotificationLoading(false);
+        }
+      }
+    };
+
+    loadNotifications();
+    const interval = window.setInterval(loadNotifications, 30000);
+
+    return () => {
+      mounted = false;
+      window.clearInterval(interval);
+    };
+  }, []);
+
   const handleLogout = async () => {
     await logout();
     navigate("/login");
+  };
+
+  const handleNotificationClick = async (notification) => {
+    try {
+      if (!notification.is_read) {
+        await markAdminNotificationRead(notification.id);
+        setNotifications((current) => current.map((item) => (
+          item.id === notification.id ? { ...item, is_read: true } : item
+        )));
+        setNotificationUnreadCount((count) => Math.max(0, count - 1));
+      }
+    } catch {
+      // ignore read failures during navigation
+    }
+
+    setNotificationOpen(false);
+    if (notification.path) {
+      navigate(notification.path);
+    }
   };
 
   return (
@@ -148,16 +204,56 @@ const Topbar = ({ onMenuClick, showMenuButton = false }) => {
       </div>
 
       <div className="flex items-center gap-6 relative">
-        <div className="relative">
-          <button onClick={() => setNotificationOpen(!notificationOpen)}>
-            <Bell size={20} />
+        <div
+          ref={notificationRef}
+          className="relative"
+          onMouseEnter={() => setNotificationOpen(true)}
+          onMouseLeave={() => setNotificationOpen(false)}
+        >
+          <button onClick={() => setNotificationOpen(!notificationOpen)} className="relative">
+            <Bell size={20} className={notificationUnreadCount > 0 ? "text-red-500 animate-pulse" : ""} />
+            {notificationUnreadCount > 0 ? (
+              <span className="absolute -right-1 -top-1 flex h-3 w-3">
+                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-400 opacity-75" />
+                <span className="relative inline-flex h-3 w-3 rounded-full bg-red-500" />
+              </span>
+            ) : null}
           </button>
 
           {notificationOpen && (
-            <div className="absolute right-0 mt-2 w-64 bg-white border rounded-lg shadow-lg z-50 p-4">
-              <p className="text-sm text-gray-600">
-                No new notifications
-              </p>
+            <div className="absolute right-0 mt-2 w-80 bg-white border rounded-lg shadow-lg z-50 overflow-hidden">
+              <div className="border-b border-gray-100 px-4 py-3">
+                <p className="text-sm font-semibold text-gray-900">Notifications</p>
+                <p className="text-xs text-gray-500">{notificationUnreadCount} unread</p>
+              </div>
+              <div className="max-h-96 overflow-y-auto">
+                {notificationLoading ? (
+                  <div className="px-4 py-3 text-sm text-gray-500">Loading notifications...</div>
+                ) : null}
+                {!notificationLoading && notifications.length === 0 ? (
+                  <div className="px-4 py-4 text-sm text-gray-500">No new notifications.</div>
+                ) : null}
+                {!notificationLoading && notifications.map((notification) => (
+                  <button
+                    key={notification.id}
+                    onClick={() => handleNotificationClick(notification)}
+                    className={`w-full border-b border-gray-100 px-4 py-3 text-left last:border-b-0 hover:bg-gray-50 ${
+                      notification.is_read ? "bg-white" : "bg-red-50/30"
+                    }`}
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-medium text-gray-900">{notification.title}</p>
+                        <p className="mt-1 text-xs text-gray-500">{notification.message || "Open to view details."}</p>
+                        <p className="mt-2 text-[11px] text-gray-400">
+                          {notification.created_at ? new Date(notification.created_at).toLocaleString() : ""}
+                        </p>
+                      </div>
+                      {!notification.is_read ? <span className="mt-1 h-2.5 w-2.5 rounded-full bg-red-500" /> : null}
+                    </div>
+                  </button>
+                ))}
+              </div>
             </div>
           )}
         </div>

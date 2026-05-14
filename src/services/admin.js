@@ -75,6 +75,39 @@ export const fetchAdminInquiries = async ({
   return response.data;
 };
 
+export const fetchAdminNotifications = async () => {
+  const response = await api.get('/admin/notifications');
+  return response.data;
+};
+
+export const markAdminNotificationRead = async (notificationId) => {
+  const response = await api.post(`/admin/notifications/${notificationId}/read`);
+  return response.data;
+};
+
+export const fetchAdminVendorEnquiries = async ({
+  page = 1,
+  perPage = 10,
+  search = '',
+  month = '',
+} = {}) => {
+  const response = await api.get('/admin/vendor-enquiries', {
+    params: {
+      page,
+      per_page: perPage,
+      search: search || undefined,
+      month: month || undefined,
+    },
+  });
+
+  return response.data;
+};
+
+export const fetchAdminVendorEnquiry = async (inquiryId) => {
+  const response = await api.get(`/admin/vendor-enquiries/${inquiryId}`);
+  return response.data;
+};
+
 export const fetchAdminStaff = async ({
   page = 1,
   perPage = 10,

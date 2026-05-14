@@ -8,6 +8,7 @@ import {
   createAdminProduct,
   extractApiError,
   fetchAdminCategoriesTree,
+  fetchAdminPricingDefaults,
   fetchAdminProduct,
   fetchCategoryTemplateOptions,
   toggleAdminProductStatus,
@@ -20,8 +21,10 @@ import PermissionNotice from '../components/PermissionNotice';
 const initialForm = {
   category_id: '',
   subcategory_id: '',
+  sku: '',
   name: '',
   slug: '',
+  pricing_method: 'manual',
   short_description: '',
   description: '',
   base_price: 0,
@@ -40,6 +43,77 @@ const initialForm = {
       is_active: true,
     },
   ],
+  paper_pricing: {
+    reference_gsm: '',
+    reference_paper_type: '',
+    imposition_per_sheet: '',
+    pages_per_unit: '',
+    paper_cost_per_sheet: '',
+    print_cost_per_sheet: '',
+    finishing_cost_per_unit: '',
+    setup_cost: '',
+  },
+};
+
+const defaultPricingDefaults = {
+  settings: {
+    margin_percent: 0.15,
+    gst_rate: 0.12,
+    gst_display_mode: 'exclusive',
+    wastage_threshold_1: 500,
+    wastage_threshold_2: 2000,
+    low_wastage_percent: 0.05,
+    mid_wastage_percent: 0.03,
+    high_wastage_percent: 0.02,
+    minimum_order_value: 200,
+  },
+  paper_quantity_breakpoints: [25, 50, 100, 250, 500, 1000, 2500, 5000],
+};
+
+const roundCurrency = (value) => Number((Math.round((Number(value) + Number.EPSILON) * 100) / 100).toFixed(2));
+
+const calculatePaperQuantityPrice = (quantity, paperPricing, pricingDefaults) => {
+  const settings = pricingDefaults?.settings || defaultPricingDefaults.settings;
+  const imposition = Number(paperPricing.imposition_per_sheet || 0);
+  const pages = Number(paperPricing.pages_per_unit || 0);
+  const paperCost = Number(paperPricing.paper_cost_per_sheet || 0);
+  const printCost = Number(paperPricing.print_cost_per_sheet || 0);
+  const finishingCost = Number(paperPricing.finishing_cost_per_unit || 0);
+  const setupCost = Number(paperPricing.setup_cost || 0);
+
+  if (
+    imposition <= 0 ||
+    pages <= 0 ||
+    [paperCost, printCost, finishingCost, setupCost].some((value) => Number.isNaN(value) || value < 0)
+  ) {
+    return null;
+  }
+
+  const baseSheets = Math.ceil((quantity * pages) / imposition);
+  const wastageRate = baseSheets < settings.wastage_threshold_1
+    ? settings.low_wastage_percent
+    : baseSheets <= settings.wastage_threshold_2
+      ? settings.mid_wastage_percent
+      : settings.high_wastage_percent;
+  const totalSheets = Math.ceil(baseSheets * (1 + Number(wastageRate)));
+  const wasteSheets = totalSheets - baseSheets;
+  const productionCost = (totalSheets * paperCost)
+    + (totalSheets * printCost)
+    + (quantity * finishingCost)
+    + setupCost;
+  const unitPrice = roundCurrency((productionCost * (1 + Number(settings.margin_percent || 0))) / quantity);
+
+  return {
+    quantity,
+    price: unitPrice,
+    compare_price: '',
+    is_active: true,
+    base_sheets: baseSheets,
+    waste_sheets: wasteSheets,
+    wastage_rate: Number(wastageRate),
+    total_sheets: totalSheets,
+    line_total: roundCurrency(unitPrice * quantity),
+  };
 };
 
 const ProductEditorPage = () => {
@@ -57,6 +131,7 @@ const ProductEditorPage = () => {
   const [templateLoading, setTemplateLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+  const [pricingDefaults, setPricingDefaults] = useState(defaultPricingDefaults);
   const canView = admin?.role === 'admin' || (admin?.permissions || []).includes('products');
 
   useEffect(() => {
@@ -70,8 +145,12 @@ const ProductEditorPage = () => {
         setLoading(true);
         setError('');
 
-        const treeData = await fetchAdminCategoriesTree();
+        const [treeData, pricingDefaultsData] = await Promise.all([
+          fetchAdminCategoriesTree(),
+          fetchAdminPricingDefaults(),
+        ]);
         setCategoryTree(treeData?.categories || []);
+        setPricingDefaults(pricingDefaultsData || defaultPricingDefaults);
 
         if (isCreate) {
           setForm(initialForm);
@@ -88,8 +167,10 @@ const ProductEditorPage = () => {
         setForm({
           category_id: product.category_id || '',
           subcategory_id: product.subcategory_id || '',
+          sku: product.sku || '',
           name: product.name || '',
           slug: product.slug || '',
+          pricing_method: product.pricing_method || 'manual',
           short_description: product.short_description || '',
           description: product.description || '',
           base_price: product.base_price || 0,
@@ -108,6 +189,7 @@ const ProductEditorPage = () => {
                 is_active: price.is_active,
               }))
             : initialForm.quantity_prices,
+          paper_pricing: product.paper_pricing || initialForm.paper_pricing,
         });
       } catch (err) {
         setError(extractApiError(err, 'Failed to load product.'));
@@ -136,19 +218,42 @@ const ProductEditorPage = () => {
     }, 0);
   }, [form.option_groups]);
 
+  const generatedPaperQuantityPrices = useMemo(() => {
+    if (form.pricing_method !== 'paper_formula') {
+      return [];
+    }
+
+    return (pricingDefaults?.paper_quantity_breakpoints || defaultPricingDefaults.paper_quantity_breakpoints)
+      .map((quantity) => calculatePaperQuantityPrice(quantity, form.paper_pricing, pricingDefaults))
+      .filter(Boolean);
+  }, [form.paper_pricing, form.pricing_method, pricingDefaults]);
+
   const startingPrice = useMemo(() => {
-    const activePrices = form.quantity_prices
+    const priceSource = form.pricing_method === 'paper_formula'
+      ? generatedPaperQuantityPrices
+      : form.quantity_prices;
+    const activePrices = priceSource
       .filter((price) => price.is_active)
       .map((price) => Number(price.price || 0))
       .filter((price) => !Number.isNaN(price));
 
     return activePrices.length ? Math.min(...activePrices) : Number(form.base_price || 0);
-  }, [form.quantity_prices, form.base_price]);
+  }, [form.quantity_prices, form.base_price, form.pricing_method, generatedPaperQuantityPrices]);
 
   const updateField = (field, value) => {
     setForm((prev) => ({
       ...prev,
       [field]: value,
+    }));
+  };
+
+  const updatePaperPricingField = (field, value) => {
+    setForm((prev) => ({
+      ...prev,
+      paper_pricing: {
+        ...prev.paper_pricing,
+        [field]: value,
+      },
     }));
   };
 
@@ -241,8 +346,10 @@ const ProductEditorPage = () => {
       const payload = {
         category_id: Number(form.category_id),
         subcategory_id: form.subcategory_id ? Number(form.subcategory_id) : null,
+        sku: form.sku || null,
         name: form.name,
         slug: form.slug || null,
+        pricing_method: form.pricing_method,
         short_description: form.short_description || null,
         description: form.description || null,
         base_price: Number(form.base_price || 0),
@@ -273,12 +380,24 @@ const ProductEditorPage = () => {
             sort_order: Number(value.sort_order ?? valueIndex),
           })),
         })),
-        quantity_prices: form.quantity_prices.map((price) => ({
+        quantity_prices: (form.pricing_method === 'paper_formula' ? generatedPaperQuantityPrices : form.quantity_prices).map((price) => ({
           quantity: Number(price.quantity),
           price: Number(price.price),
           compare_price: price.compare_price === '' ? null : Number(price.compare_price),
           is_active: price.is_active ?? true,
         })),
+        paper_pricing: form.pricing_method === 'paper_formula'
+          ? {
+              reference_gsm: form.paper_pricing.reference_gsm || null,
+              reference_paper_type: form.paper_pricing.reference_paper_type || null,
+              imposition_per_sheet: Number(form.paper_pricing.imposition_per_sheet),
+              pages_per_unit: Number(form.paper_pricing.pages_per_unit),
+              paper_cost_per_sheet: Number(form.paper_pricing.paper_cost_per_sheet),
+              print_cost_per_sheet: Number(form.paper_pricing.print_cost_per_sheet),
+              finishing_cost_per_unit: Number(form.paper_pricing.finishing_cost_per_unit || 0),
+              setup_cost: Number(form.paper_pricing.setup_cost || 0),
+            }
+          : null,
       };
 
       if (isCreate) {
@@ -347,7 +466,7 @@ const ProductEditorPage = () => {
             {isCreate ? 'Create Product' : 'Product Details'}
           </h1>
           <p className="text-gray-600 text-sm">
-            Configure sellable pricing, imagery, quantity brackets, and final option modifiers.
+            Configure sellable pricing, SKU mapping, imagery, quantity brackets, and final option modifiers.
           </p>
         </div>
 
@@ -392,17 +511,28 @@ const ProductEditorPage = () => {
           <div className="rounded-xl border border-sky-200 bg-sky-50 p-4">
             <h3 className="text-sm font-semibold text-sky-900">How Pricing Works</h3>
             <p className="mt-2 text-sm text-sky-800">
-              Quantity brackets are total base selling prices for that run size, such as 100 cards or 500 cards.
+              Quantity brackets are per-piece selling prices for each run size, such as 100 cards or 500 cards.
             </p>
             <p className="mt-2 text-sm text-sky-800">
-              Variant option prices are extra charges added on top of the selected quantity bracket. The system does not multiply option values by quantity.
+              Variant option prices are extra per-piece charges added on top of the selected quantity bracket.
             </p>
             <p className="mt-2 text-sm font-medium text-sky-900">
-              Final price = selected quantity bracket base price + selected option extra charges
+              Final unit price = selected quantity bracket price + selected option extra charges
             </p>
           </div>
 
-          <div className="grid md:grid-cols-2 gap-4">
+          <div className="grid md:grid-cols-3 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Product SKU</label>
+              <input
+                type="text"
+                value={form.sku}
+                onChange={(e) => updateField('sku', e.target.value)}
+                className="w-full rounded-xl border border-gray-300 px-4 py-3 outline-none focus:ring-2 focus:ring-[#9BCBBF]"
+                placeholder="AP-VC-001"
+              />
+            </div>
+
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">Product Name</label>
               <input
@@ -423,6 +553,29 @@ const ProductEditorPage = () => {
                 className="w-full rounded-xl border border-gray-300 px-4 py-3 outline-none focus:ring-2 focus:ring-[#9BCBBF]"
                 placeholder="Leave blank to auto-generate"
               />
+            </div>
+          </div>
+
+          <div className="grid md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Pricing Method</label>
+              <select
+                value={form.pricing_method}
+                onChange={(e) => updateField('pricing_method', e.target.value)}
+                className="w-full rounded-xl border border-gray-300 bg-white px-4 py-3 outline-none focus:ring-2 focus:ring-[#9BCBBF]"
+              >
+                <option value="manual">Manual Brackets</option>
+                <option value="paper_formula">Paper Formula</option>
+                <option value="fixed_tier">Fixed Tier</option>
+              </select>
+            </div>
+
+            <div className="rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-600">
+              {form.pricing_method === 'paper_formula'
+                ? 'Paper formula products auto-generate quantity brackets from imposition, pages, cost, wastage, and margin.'
+                : form.pricing_method === 'fixed_tier'
+                  ? 'Fixed tier products keep manual per-piece quantity brackets for vendor-priced products.'
+                  : 'Manual products keep editable quantity brackets without the paper calculator.'}
             </div>
           </div>
 
@@ -505,27 +658,147 @@ const ProductEditorPage = () => {
             uploadLoading={uploadLoading}
           />
 
+          {form.pricing_method === 'paper_formula' ? (
+            <div className="space-y-4 rounded-xl border border-emerald-200 bg-emerald-50/40 p-5">
+              <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+                <div>
+                  <h2 className="text-lg font-semibold text-gray-900">Paper Pricing Inputs</h2>
+                  <p className="text-sm text-gray-600 mt-1">
+                    These inputs follow the client workbook formula and generate per-piece prices for the fixed quantity breakpoints.
+                  </p>
+                </div>
+                <div className="rounded-xl bg-white px-4 py-3 text-xs text-gray-600 border border-emerald-100">
+                  Margin {(Number(pricingDefaults.settings.margin_percent || 0) * 100).toFixed(0)}% · GST {(Number(pricingDefaults.settings.gst_rate || 0) * 100).toFixed(0)}% ({pricingDefaults.settings.gst_display_mode})
+                </div>
+              </div>
+
+              <div className="grid md:grid-cols-2 xl:grid-cols-4 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Reference GSM</label>
+                  <input
+                    type="text"
+                    value={form.paper_pricing.reference_gsm}
+                    onChange={(e) => updatePaperPricingField('reference_gsm', e.target.value)}
+                    className="w-full rounded-xl border border-gray-300 px-4 py-3 outline-none focus:ring-2 focus:ring-[#9BCBBF]"
+                    placeholder="130"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Reference Paper Type</label>
+                  <input
+                    type="text"
+                    value={form.paper_pricing.reference_paper_type}
+                    onChange={(e) => updatePaperPricingField('reference_paper_type', e.target.value)}
+                    className="w-full rounded-xl border border-gray-300 px-4 py-3 outline-none focus:ring-2 focus:ring-[#9BCBBF]"
+                    placeholder="Glossy 130gsm"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Imposition / Sheet</label>
+                  <input
+                    type="number"
+                    min="1"
+                    value={form.paper_pricing.imposition_per_sheet}
+                    onChange={(e) => updatePaperPricingField('imposition_per_sheet', e.target.value)}
+                    className="w-full rounded-xl border border-gray-300 px-4 py-3 outline-none focus:ring-2 focus:ring-[#9BCBBF]"
+                    required={form.pricing_method === 'paper_formula'}
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Pages / Unit</label>
+                  <input
+                    type="number"
+                    min="1"
+                    value={form.paper_pricing.pages_per_unit}
+                    onChange={(e) => updatePaperPricingField('pages_per_unit', e.target.value)}
+                    className="w-full rounded-xl border border-gray-300 px-4 py-3 outline-none focus:ring-2 focus:ring-[#9BCBBF]"
+                    required={form.pricing_method === 'paper_formula'}
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Paper Cost / Sheet</label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.0001"
+                    value={form.paper_pricing.paper_cost_per_sheet}
+                    onChange={(e) => updatePaperPricingField('paper_cost_per_sheet', e.target.value)}
+                    className="w-full rounded-xl border border-gray-300 px-4 py-3 outline-none focus:ring-2 focus:ring-[#9BCBBF]"
+                    required={form.pricing_method === 'paper_formula'}
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Print Cost / Sheet</label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.0001"
+                    value={form.paper_pricing.print_cost_per_sheet}
+                    onChange={(e) => updatePaperPricingField('print_cost_per_sheet', e.target.value)}
+                    className="w-full rounded-xl border border-gray-300 px-4 py-3 outline-none focus:ring-2 focus:ring-[#9BCBBF]"
+                    required={form.pricing_method === 'paper_formula'}
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Finishing Cost / Unit</label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.0001"
+                    value={form.paper_pricing.finishing_cost_per_unit}
+                    onChange={(e) => updatePaperPricingField('finishing_cost_per_unit', e.target.value)}
+                    className="w-full rounded-xl border border-gray-300 px-4 py-3 outline-none focus:ring-2 focus:ring-[#9BCBBF]"
+                    required={form.pricing_method === 'paper_formula'}
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Setup Cost</label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={form.paper_pricing.setup_cost}
+                    onChange={(e) => updatePaperPricingField('setup_cost', e.target.value)}
+                    className="w-full rounded-xl border border-gray-300 px-4 py-3 outline-none focus:ring-2 focus:ring-[#9BCBBF]"
+                    required={form.pricing_method === 'paper_formula'}
+                  />
+                </div>
+              </div>
+            </div>
+          ) : null}
+
           <div className="space-y-4">
             <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
               <div>
                 <h2 className="text-lg font-semibold text-gray-900">Quantity Brackets</h2>
                 <p className="text-sm text-gray-500 mt-1">
-                  Add one bracket per quantity like 100, 250, 500, 1000. Each price here is the full base price for that quantity bracket.
+                  {form.pricing_method === 'paper_formula'
+                    ? 'These per-piece quantity brackets are generated automatically from the paper formula.'
+                    : 'Add one bracket per quantity like 100, 250, 500, 1000. Each price here is the per-piece base selling price for that quantity.'}
                 </p>
               </div>
 
-              <button
-                type="button"
-                onClick={addQuantityPrice}
-                className="inline-flex items-center gap-2 rounded-xl bg-[#9BCBBF] px-4 py-2 text-sm font-medium text-white"
-              >
-                <Plus size={16} />
-                Add Quantity
-              </button>
+              {form.pricing_method !== 'paper_formula' ? (
+                <button
+                  type="button"
+                  onClick={addQuantityPrice}
+                  className="inline-flex items-center gap-2 rounded-xl bg-[#9BCBBF] px-4 py-2 text-sm font-medium text-white"
+                >
+                  <Plus size={16} />
+                  Add Quantity
+                </button>
+              ) : null}
             </div>
 
             <div className="space-y-3">
-              {form.quantity_prices.map((price, index) => (
+              {(form.pricing_method === 'paper_formula' ? generatedPaperQuantityPrices : form.quantity_prices).map((price, index) => (
                 <div key={`quantity-${index}`} className="rounded-xl border border-gray-200 bg-gray-50 p-4">
                   <div className="grid md:grid-cols-2 xl:grid-cols-4 gap-4">
                     <div>
@@ -537,11 +810,12 @@ const ProductEditorPage = () => {
                         onChange={(e) => updateQuantityPrice(index, 'quantity', e.target.value)}
                         className="w-full rounded-xl border border-gray-300 px-4 py-3 outline-none focus:ring-2 focus:ring-[#9BCBBF]"
                         required
+                        readOnly={form.pricing_method === 'paper_formula'}
                       />
                     </div>
 
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">Base Price For This Quantity</label>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">Per-Piece Price For This Quantity</label>
                       <input
                         type="number"
                         min="0"
@@ -550,9 +824,12 @@ const ProductEditorPage = () => {
                         onChange={(e) => updateQuantityPrice(index, 'price', e.target.value)}
                         className="w-full rounded-xl border border-gray-300 px-4 py-3 outline-none focus:ring-2 focus:ring-[#9BCBBF]"
                         required
+                        readOnly={form.pricing_method === 'paper_formula'}
                       />
                       <p className="mt-1 text-xs text-gray-500">
-                        Example: if 250 units sell for Rs. 450 before any option add-ons, enter 450 here.
+                        {form.pricing_method === 'paper_formula'
+                          ? `Run total at this bracket: Rs. ${Number(price.line_total || 0).toFixed(2)}`
+                          : 'Example: if the 250-unit bracket sells at Rs. 2.40 per piece before add-ons, enter 2.40 here.'}
                       </p>
                     </div>
 
@@ -565,6 +842,7 @@ const ProductEditorPage = () => {
                         value={price.compare_price}
                         onChange={(e) => updateQuantityPrice(index, 'compare_price', e.target.value)}
                         className="w-full rounded-xl border border-gray-300 px-4 py-3 outline-none focus:ring-2 focus:ring-[#9BCBBF]"
+                        readOnly={form.pricing_method === 'paper_formula'}
                       />
                     </div>
 
@@ -575,18 +853,25 @@ const ProductEditorPage = () => {
                           checked={price.is_active ?? true}
                           onChange={(e) => updateQuantityPrice(index, 'is_active', e.target.checked)}
                           className="h-4 w-4 rounded border-gray-300"
+                          disabled={form.pricing_method === 'paper_formula'}
                         />
                         Active
                       </label>
 
-                      <button
-                        type="button"
-                        onClick={() => removeQuantityPrice(index)}
-                        className="inline-flex items-center gap-1 text-sm text-red-600 hover:text-red-700"
-                      >
-                        <Trash2 size={14} />
-                        Remove
-                      </button>
+                      {form.pricing_method !== 'paper_formula' ? (
+                        <button
+                          type="button"
+                          onClick={() => removeQuantityPrice(index)}
+                          className="inline-flex items-center gap-1 text-sm text-red-600 hover:text-red-700"
+                        >
+                          <Trash2 size={14} />
+                          Remove
+                        </button>
+                      ) : (
+                        <div className="text-xs text-gray-500">
+                          Base sheets: {price.base_sheets} · Waste sheets: {price.waste_sheets}
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -669,21 +954,23 @@ const ProductEditorPage = () => {
           <div className="bg-white border border-gray-200 rounded-xl p-6">
             <h2 className="text-lg font-semibold text-gray-900">Product Summary</h2>
             <div className="mt-4 space-y-3 text-sm text-gray-600">
+              <p><span className="font-medium text-gray-900">SKU:</span> {form.sku || '-'}</p>
+              <p><span className="font-medium text-gray-900">Pricing Method:</span> {form.pricing_method}</p>
               <p><span className="font-medium text-gray-900">Category:</span> {selectedCategory?.name || '-'}</p>
               <p><span className="font-medium text-gray-900">Subcategory:</span> {selectedSubcategory?.name || 'None'}</p>
-              <p><span className="font-medium text-gray-900">Lowest Base Quantity Price:</span> Rs. {Number(startingPrice || 0).toFixed(2)}</p>
+              <p><span className="font-medium text-gray-900">Lowest Per-Piece Price:</span> Rs. {Number(startingPrice || 0).toFixed(2)}</p>
               <p><span className="font-medium text-gray-900">Default Option Extra:</span> Rs. {Number(defaultOptionExtra || 0).toFixed(2)}</p>
-              <p><span className="font-medium text-gray-900">Example Starting Total:</span> Rs. {Number((startingPrice || 0) + (defaultOptionExtra || 0)).toFixed(2)}</p>
+              <p><span className="font-medium text-gray-900">Example Starting Unit Price:</span> Rs. {Number((startingPrice || 0) + (defaultOptionExtra || 0)).toFixed(2)}</p>
               <p><span className="font-medium text-gray-900">Images:</span> {form.images.length}</p>
               <p><span className="font-medium text-gray-900">Variant Groups:</span> {form.option_groups.length}</p>
-              <p><span className="font-medium text-gray-900">Quantity Brackets:</span> {form.quantity_prices.length}</p>
+              <p><span className="font-medium text-gray-900">Quantity Brackets:</span> {(form.pricing_method === 'paper_formula' ? generatedPaperQuantityPrices : form.quantity_prices).length}</p>
             </div>
           </div>
 
           <div className="bg-white border border-gray-200 rounded-xl p-6">
             <h2 className="text-lg font-semibold text-gray-900">Pricing Notes</h2>
             <p className="text-sm text-gray-500 mt-2">
-              The lowest active quantity bracket price becomes the storefront starting price. Option values are not separate quantity prices. They are extra charges added on top of the chosen bracket and then preserved in order snapshots.
+              The lowest active quantity bracket price becomes the storefront starting price. Option values are stored as extra per-piece charges on top of the selected bracket and then preserved in cart and order snapshots.
             </p>
           </div>
         </div>

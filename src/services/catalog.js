@@ -115,6 +115,11 @@ export const fetchCategoryTemplateOptions = async (categoryId) => {
   return response.data;
 };
 
+export const fetchAdminPricingDefaults = async () => {
+  const response = await api.get('/admin/products/pricing-defaults');
+  return response.data;
+};
+
 export const uploadAdminImage = async (file, folder = 'products') => {
   const formData = new FormData();
   formData.append('image', file);

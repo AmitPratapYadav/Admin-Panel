@@ -175,6 +175,13 @@ const VendorsPage = () => {
         </div>
 
         <div className="flex items-center gap-3">
+          <Link
+            to="/vendors/enquiries"
+            className="flex items-center gap-2 px-4 py-2 border border-gray-200 rounded-lg text-gray-700 transition-all duration-200 hover:bg-primary-dark hover:text-white hover:border-primary"
+          >
+            New Vendor Enquiry
+          </Link>
+
           <button
             onClick={handleExport}
             disabled={exportLoading}
